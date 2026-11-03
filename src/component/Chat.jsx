@@ -1,19 +1,26 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import "./Chat.css";
 
-const API_URL = "https://simpleragbackend.onrender.com/chat";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/chat";
 
 function Chat() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const sendMessage = async (e) => {
-    e.preventDefault();
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-    if (!question.trim() || loading) return;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages, loading]);
 
-    const userQuestion = question.trim();
+  const sendMessage = async (text = question) => {
+    const userQuestion = text.trim();
+
+    if (!userQuestion || loading) return;
 
     setMessages((prev) => [
       ...prev,
@@ -24,6 +31,11 @@ function Chat() {
     setLoading(true);
 
     try {
+      const historyPayload = messages.slice(-6).map((msg) => ({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content,
+      }));
+
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
@@ -31,85 +43,194 @@ function Chat() {
         },
         body: JSON.stringify({
           question: userQuestion,
+          history: historyPayload,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to get response from server");
+        throw new Error(`Server error: ${response.status}`);
       }
 
       const data = await response.json();
 
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.answer },
+        {
+          role: "assistant",
+          content: data.answer || "No answer received.",
+        },
       ]);
-    } catch  {
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Something went wrong. Please check your backend server.",
+          content:
+            "I couldn't connect to the AI service. Please make sure the backend is running and try again.",
         },
       ]);
     } finally {
       setLoading(false);
+      inputRef.current?.focus();
     }
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    sendMessage();
+  };
+
+  const clearChat = () => {
+    if (loading) return;
+    setMessages([]);
+    setQuestion("");
+  };
+
   return (
-    <div className="chat-container">
-      <div className="chat-header">
-        <div>
-          <h2>PDF Assistant</h2>
-          <p>Ask questions about your documents</p>
-        </div>
-        <span className="status">● Online</span>
-      </div>
-
-      <div className="chat-messages">
-        {messages.length === 0 && (
-          <div className="welcome-message">
-            <h3>How can I help you?</h3>
-            <p>Ask me anything about your uploaded PDF.</p>
+    <div className="app-shell">
+      <main className="chat-app">
+        {/* Header */}
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-icon">R</div>
+            <div>
+              <h1>RAG Assistant</h1>
+              <span>Intelligent document search</span>
+            </div>
           </div>
-        )}
 
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`message ${message.role}`}
+          <div className="topbar-right">
+            <span className="document-badge">
+              <span className="status-dot"></span>
+              Connected PDF
+            </span>
+
+            <button
+              className="clear-button"
+              onClick={clearChat}
+              disabled={loading || messages.length === 0}
+            >
+              New chat
+            </button>
+          </div>
+        </header>
+
+        {/* Chat body */}
+        <section className="chat-body">
+          {messages.length === 0 ? (
+            <div className="welcome-screen">
+              <div className="welcome-icon">AI</div>
+
+              <span className="eyebrow">YOUR DOCUMENT ASSISTANT</span>
+
+              <h2>
+                Ask anything about
+                <br />
+                <span>your document records.</span>
+              </h2>
+
+              <p className="welcome-description">
+                Search employee attendance, leave records, and daily work details using natural language.
+              </p>
+
+              <div className="suggestion-section">
+                <div className="suggestion-heading">
+                  <span>TRY ASKING</span>
+                  <span>Suggested questions</span>
+                </div>
+
+                <div className="suggestions-grid" style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+                  {[
+                    "How many leaves did Rahul take?",
+                    "What was the total working hours logged?",
+                    "List all employees in the records",
+                  ].map((suggested, idx) => (
+                    <button
+                      key={idx}
+                      className="clear-button"
+                      style={{ fontSize: "0.85rem", padding: "8px 12px" }}
+                      onClick={() => sendMessage(suggested)}
+                    >
+                      {suggested}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="messages-list">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`message-row ${message.role}`}
+                >
+                  <div className="avatar">
+                    {message.role === "user" ? "Y" : "AI"}
+                  </div>
+
+                  <div className="message-wrapper">
+                    <div className="message-author">
+                      {message.role === "user" ? "You" : "RAG Assistant"}
+                    </div>
+
+                    <div className="message-bubble">
+                      {message.content}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div className="message-row assistant">
+                  <div className="avatar">AI</div>
+                  <div className="message-wrapper">
+                    <div className="message-author">
+                      RAG Assistant
+                    </div>
+                    <div className="message-bubble typing">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </section>
+
+        {/* Input */}
+        <footer className="chat-footer">
+          <form
+            className="input-container"
+            onSubmit={handleSubmit}
           >
-            <div className="message-label">
-              {message.role === "user" ? "You" : "AI Assistant"}
-            </div>
-            <div className="message-content">
-              {message.content}
-            </div>
-          </div>
-        ))}
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Ask about employees, leave or timesheets..."
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              disabled={loading}
+            />
 
-        {loading && (
-          <div className="message assistant">
-            <div className="message-label">AI Assistant</div>
-            <div className="message-content">Thinking...</div>
-          </div>
-        )}
-      </div>
+            <button
+              type="submit"
+              className="send-button"
+              disabled={loading || !question.trim()}
+            >
+              Send
+              <span>↑</span>
+            </button>
+          </form>
 
-      <form className="chat-input-area" onSubmit={sendMessage}>
-        <input
-          type="text"
-          placeholder="Ask something about your PDF..."
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          disabled={loading}
-        />
-
-        <button type="submit" disabled={loading || !question.trim()}>
-          {loading ? "..." : "Send"}
-        </button>
-      </form>
+          <p className="footer-note">
+            AI responses are generated from the connected PDF knowledge base.
+          </p>
+        </footer>
+      </main>
     </div>
   );
 }
